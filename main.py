@@ -83,37 +83,38 @@ def parseArgs():
     return parser.parse_args()
 
 
-gpt2 = AutoModelForCausalLM.from_pretrained("gpt2", return_dict_in_generate=True)
-tokenizer = AutoTokenizer.from_pretrained("gpt2")
+def get_gpt2_probs():
+    gpt2 = AutoModelForCausalLM.from_pretrained("gpt2", return_dict_in_generate=True)
+    tokenizer = AutoTokenizer.from_pretrained("gpt2")
 
-input_ids = tokenizer("Today is a nice day", return_tensors="pt").input_ids
+    input_ids = tokenizer("Today is a nice day", return_tensors="pt").input_ids
 
-generated_outputs = gpt2.generate(input_ids, do_sample=True, num_return_sequences=3, output_scores=True)
+    generated_outputs = gpt2.generate(input_ids, do_sample=True, num_return_sequences=3, output_scores=True)
 
-# only use id's that were generated
-# gen_sequences has shape [3, 15]
-gen_sequences = generated_outputs.sequences[:, input_ids.shape[-1]:]
+    # only use id's that were generated
+    # gen_sequences has shape [3, 15]
+    gen_sequences = generated_outputs.sequences[:, input_ids.shape[-1]:]
 
-# let's stack the logits generated at each step to a tensor and transform
-# logits to probs
-probs = torch.stack(generated_outputs.scores, dim=1).softmax(-1)  # -> shape [3, 15, vocab_size]
+    # let's stack the logits generated at each step to a tensor and transform
+    # logits to probs
+    probs = torch.stack(generated_outputs.scores, dim=1).softmax(-1)  # -> shape [3, 15, vocab_size]
 
-# now we need to collect the probability of the generated token
-# we need to add a dummy dim in the end to make gather work
-gen_probs = torch.gather(probs, 2, gen_sequences[:, :, None]).squeeze(-1)
+    # now we need to collect the probability of the generated token
+    # we need to add a dummy dim in the end to make gather work
+    gen_probs = torch.gather(probs, 2, gen_sequences[:, :, None]).squeeze(-1)
 
-# now we can do all kinds of things with the probs
+    # now we can do all kinds of things with the probs
 
-# 1) the probs that exactly those sequences are generated again
-# those are normally going to be very small
-unique_prob_per_sequence = gen_probs.prod(-1)
+    # 1) the probs that exactly those sequences are generated again
+    # those are normally going to be very small
+    unique_prob_per_sequence = gen_probs.prod(-1)
 
-# 2) normalize the probs over the three sequences
-normed_gen_probs = gen_probs / gen_probs.sum(0)
-assert normed_gen_probs[:, 0].sum() == 1.0, "probs should be normalized"
+    # 2) normalize the probs over the three sequences
+    normed_gen_probs = gen_probs / gen_probs.sum(0)
+    assert normed_gen_probs[:, 0].sum() == 1.0, "probs should be normalized"
 
-# 3) compare normalized probs to each other like in 1)
-unique_normed_prob_per_sequence = normed_gen_probs.prod(-1)
+    # 3) compare normalized probs to each other like in 1)
+    unique_normed_prob_per_sequence = normed_gen_probs.prod(-1)
 
 if __name__ == "__main__":
 
@@ -125,5 +126,7 @@ if __name__ == "__main__":
     # Setting additional parameters
     torch.manual_seed(1)
     device = torch.device("cuda" if cuda else "cpu")
+    
+    get_gpt2_probs()
 
     args = parseArgs()
